@@ -1,105 +1,79 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎛️ AI 편곡 및 믹싱 진단기</title>
-    <style>
-        body { font-family: 'Pretendard', sans-serif; background-color: #f0f2f5; padding: 20px; display: flex; justify-content: center; }
-        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 800px; width: 100%; }
-        h1 { color: #2c3e50; text-align: center; font-size: 24px; }
-        .box { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #3498db; }
-        select, button { width: 100%; padding: 12px; margin-top: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; }
-        button { background: #27ae60; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 20px; }
-        button:hover { background: #219a52; }
-        .result { display: none; margin-top: 20px; padding: 20px; border-radius: 8px; background: #e8f6f3; border: 1px solid #a3e4d7; }
-        .warning { color: #c0392b; font-weight: bold; }
-        .good { color: #27ae60; font-weight: bold; }
-    </style>
-</head>
-<body>
+import streamlit as st
+import librosa
+import numpy as np
 
-<div class="container">
-    <h1>🎛️ AI 편곡 & 믹싱 진단기</h1>
-    <p style="text-align:center; color:#7f8c8d;">현재 밴드랩에 추가한 트랙(악기)들을 입력하면, AI가 주파수 충돌과 밸런스를 분석합니다.</p>
+st.set_page_config(page_title="AI 믹싱 분석기", page_icon="🎧", layout="centered")
 
-    <div class="box">
-        <h3>🎬 1. 장면(Scene)의 목표 감정</h3>
-        <select id="emotion">
-            <option value="none">감정을 선택하세요</option>
-            <option value="긴장/공포">긴장감, 공포, 스릴러</option>
-            <option value="슬픔/우울">슬픔, 우울, 회상</option>
-            <option value="기쁨/활기">기쁨, 활기, 희망</option>
-        </select>
-    </div>
+st.title("🎧 AI 음악 감독: 트랙 조화(Mixing) 분석기")
+st.markdown("밴드랩에서 다운로드한 MP3/WAV 파일을 올리면, **트랙 간의 주파수 충돌(마스킹)과 볼륨 밸런스**를 정밀 진단합니다.")
 
-    <div class="box">
-        <h3>🎧 2. 밴드랩 악기 구성 (최대 4개)</h3>
-        <select id="track1"><option value="none">트랙 1 악기 선택</option><option value="low">킥 드럼 / 베이스 (저음역)</option><option value="mid">피아노 / 어쿠스틱 기타 / 패드 (중음역)</option><option value="high">하이햇 / 리드 신스 / 플룻 (고음역)</option></select>
-        <select id="track2"><option value="none">트랙 2 악기 선택</option><option value="low">킥 드럼 / 베이스 (저음역)</option><option value="mid">피아노 / 어쿠스틱 기타 / 패드 (중음역)</option><option value="high">하이햇 / 리드 신스 / 플룻 (고음역)</option></select>
-        <select id="track3"><option value="none">트랙 3 악기 선택</option><option value="low">킥 드럼 / 베이스 (저음역)</option><option value="mid">피아노 / 어쿠스틱 기타 / 패드 (중음역)</option><option value="high">하이햇 / 리드 신스 / 플룻 (고음역)</option></select>
-        <select id="track4"><option value="none">트랙 4 악기 선택</option><option value="low">킥 드럼 / 베이스 (저음역)</option><option value="mid">피아노 / 어쿠스틱 기타 / 패드 (중음역)</option><option value="high">하이햇 / 리드 신스 / 플룻 (고음역)</option></select>
-    </div>
+uploaded_file = st.file_uploader("완성된 음원 파일을 업로드하세요.", type=['mp3', 'wav'])
 
-    <button onclick="analyzeArrangement()">🤖 AI 주파수 및 밸런스 진단하기</button>
+if uploaded_file is not None:
+    st.audio(uploaded_file)
+    
+    if st.button("🤖 AI 트랙 정밀 분석 시작"):
+        with st.spinner("음원 파형의 주파수와 음압(RMS)을 분석 중입니다..."):
+            # 1. 오디오 데이터 로드 (22050Hz 샘플링)
+            y, sr = librosa.load(uploaded_file, sr=22050)
+            
+            # 2. 클리핑(Clipping) 및 다이내믹스 분석
+            max_amplitude = np.max(np.abs(y))
+            rms = librosa.feature.rms(y=y)[0]
+            avg_rms = np.mean(rms)
+            
+            # 3. 주파수 대역별 에너지 분석 (트랙 충돌/마스킹 파악)
+            # STFT(단기 푸리에 변환)를 통해 소리를 주파수 대역으로 분리
+            S = np.abs(librosa.stft(y))
+            freqs = librosa.fft_frequencies(sr=sr)
+            
+            # 대역폭 설정 (저음, 중음, 고음)
+            low_idx = np.where(freqs < 250)[0]
+            mid_idx = np.where((freqs >= 250) & (freqs < 4000))[0]
+            high_idx = np.where(freqs >= 4000)[0]
+            
+            # 대역별 평균 에너지 계산
+            low_energy = np.mean(S[low_idx, :])
+            mid_energy = np.mean(S[mid_idx, :])
+            high_energy = np.mean(S[high_idx, :])
+            total_energy = low_energy + mid_energy + high_energy
+            
+            # 백분율 환산
+            low_pct = (low_energy / total_energy) * 100
+            mid_pct = (mid_energy / total_energy) * 100
+            high_pct = (high_energy / total_energy) * 100
 
-    <div id="resultBox" class="result">
-        <h3 style="margin-top:0; color:#2c3e50;">💡 진단 결과 및 AI 감독의 조언</h3>
-        <p id="analysisText"></p>
-    </div>
-</div>
+            st.success("분석이 완료되었습니다!")
+            st.divider()
 
-<script>
-    function analyzeArrangement() {
-        const tracks = [
-            document.getElementById('track1').value,
-            document.getElementById('track2').value,
-            document.getElementById('track3').value,
-            document.getElementById('track4').value
-        ].filter(t => t !== 'none');
+            # --- 진단 결과 출력 ---
+            st.header("📊 AI 트랙 진단 결과")
+            
+            # [진단 1] 마스킹 현상 (주파수 충돌)
+            st.subheader("1. 음역대 밸런스와 마스킹(Masking) 현상")
+            st.write(f"- 저음역(베이스/킥): {low_pct:.1f}%")
+            st.write(f"- 중음역(피아노/기타/신스): {mid_pct:.1f}%")
+            st.write(f"- 고음역(하이햇/리드): {high_pct:.1f}%")
+            
+            if mid_pct > 65:
+                st.error("⚠️ **[마스킹 경고]** 중음역대(피아노, 기타 등)에 악기가 너무 많이 뭉쳐 있습니다. 소리가 서로 잡아먹어 지저분하게 들립니다. 일부 트랙의 볼륨을 줄이거나 악기를 삭제하세요.")
+            elif low_pct < 10:
+                st.warning("⚠️ **[저음 부족]** 곡의 무게감을 잡아주는 저음(베이스/킥 드럼)이 너무 약합니다. 뼈대가 부실하게 들릴 수 있습니다.")
+            elif high_pct < 5:
+                st.warning("⚠️ **[고음 부족]** 찰랑거리는 고음역대가 부족하여 소리가 답답하게(먹먹하게) 들립니다. 하이햇이나 고음역 악기를 추가해보세요.")
+            else:
+                st.success("✅ **[밸런스 우수]** 저/중/고음역대가 고르게 분포되어 각 악기의 소리가 선명하게 분리되어 들립니다.")
 
-        const emotion = document.getElementById('emotion').value;
-        const resultBox = document.getElementById('resultBox');
-        const analysisText = document.getElementById('analysisText');
-
-        if (emotion === 'none' || tracks.length === 0) {
-            alert("감정과 최소 1개 이상의 트랙을 선택해주세요!");
-            return;
-        }
-
-        let low = 0, mid = 0, high = 0;
-        tracks.forEach(t => {
-            if (t === 'low') low++;
-            if (t === 'mid') mid++;
-            if (t === 'high') high++;
-        });
-
-        let feedback = "";
-
-        // 1. 마스킹 현상 (주파수 충돌) 진단 - 복잡한 메타인지 요소
-        if (mid >= 3) {
-            feedback += "<span class='warning'>[⚠️ 주파수 충돌 경고]</span> 중음역대(피아노, 기타 등) 악기가 너무 많습니다. 소리가 뭉쳐서 지저분하게 들리는 <strong>'마스킹(Masking) 현상'</strong>이 발생합니다. 트랙 하나의 볼륨을 대폭 줄이거나 좌우 패닝(Pan)을 조절하여 공간을 분리하세요.<br><br>";
-        } else if (low >= 2) {
-            feedback += "<span class='warning'>[⚠️ 저음역 뭉침 경고]</span> 베이스와 킥 드럼이 부딪히고 있습니다. 소리가 먹먹해지니 베이스 루프를 다른 것으로 교체하거나 볼륨을 낮추세요.<br><br>";
-        } else {
-            feedback += "<span class='good'>[✅ 주파수 밸런스 양호]</span> 악기들이 서로의 영역을 침범하지 않고 깔끔하게 분리되어 있습니다.<br><br>";
-        }
-
-        // 2. 대역폭 결핍 진단
-        if (low === 0) feedback += "<span class='warning'>[텅 빈 뼈대]</span> 저음역(베이스/킥)이 없어 음악이 허공에 뜬 것처럼 가볍습니다. 무게감을 잡아줄 베이스 트랙을 추가해보세요.<br><br>";
-        if (high === 0 && tracks.length >= 2) feedback += "<span class='warning'>[답답한 소리]</span> 고음역(하이햇/리드)이 없어 소리가 답답합니다. 공간을 열어줄 높은 소리의 루프를 찾아보세요.<br><br>";
-
-        // 3. 감정 매칭 진단
-        if (emotion === '긴장/공포' && low === 0) {
-            feedback += "<strong>[감정 매칭 조언]</strong> 공포와 긴장감은 '낮고 무거운 진동(저음)'에서 나옵니다. 심장 박동 같은 킥 드럼이나 무거운 베이스를 반드시 추가하세요.";
-        } else if (emotion === '기쁨/활기' && high === 0) {
-            feedback += "<strong>[감정 매칭 조언]</strong> 활기찬 분위기에는 찰랑거리는 고음역대(하이햇, 탬버린) 타악기가 필수입니다. 밴드랩에서 리듬 악기를 보강하세요.";
-        }
-
-        analysisText.innerHTML = feedback + "<hr><p>🔍 <strong>[나의 조절 계획]</strong> AI의 진단을 바탕으로 밴드랩에서 어떤 루프를 삭제/추가/볼륨 조절할지 고민해 보세요.</p>";
-        resultBox.style.display = 'block';
-    }
-</script>
-
-</body>
-</html>
+            # [진단 2] 볼륨 및 클리핑
+            st.subheader("2. 볼륨 밸런스 (다이내믹스)")
+            if max_amplitude > 0.98:
+                st.error("⚠️ **[클리핑 경고]** 전체 트랙의 볼륨이 너무 커서 소리가 찌그러지고(깨지고) 있습니다! 밴드랩에서 각 트랙의 페이더(볼륨)를 전체적으로 조금씩 내리세요.")
+            elif avg_rms < 0.05:
+                st.warning("⚠️ **[볼륨 미달]** 전체적인 소리가 너무 작습니다. 마스터 볼륨을 조금 올려주세요.")
+            else:
+                st.success("✅ **[볼륨 안정]** 소리가 깨지지 않고 안정적인 크기를 유지하고 있습니다.")
+                
+            st.divider()
+            
+            # [최종 성찰 가이드]
+            st.info("💡 **[메타인지 조절 가이드]** 위 진단 결과와 짝꿍의 피드백을 종합해 보세요. 빨간색 경고가 떴다면 밴드랩으로 돌아가 해당 트랙을 수정한 뒤 다시 제출해야 합니다.")
